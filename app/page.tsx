@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { gsap } from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   ArrowDown,
   ArrowUpRight,
@@ -125,6 +127,9 @@ function SectionHeading({ eyebrow, title, text }: { eyebrow: string; title: stri
 export default function Page() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeSection, setActiveSection] = useState('sobre')
+  const inventoryRef = useRef<HTMLElement>(null)
+  const pixelTransitionRef = useRef<HTMLDivElement>(null)
+  const inventoryCursorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -147,6 +152,114 @@ export default function Page() {
     document.body.style.overflow = menuOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [menuOpen])
+
+  useEffect(() => {
+    const inventory = inventoryRef.current
+    const transition = pixelTransitionRef.current
+    const cursor = inventoryCursorRef.current
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const finePointer = window.matchMedia('(pointer: fine)').matches
+
+    if (!inventory || !transition || !cursor || reduceMotion) return
+
+    gsap.registerPlugin(ScrollTrigger)
+
+    const animationContext = gsap.context(() => {
+      gsap.fromTo(
+        transition.querySelectorAll('.transition-pixel'),
+        { autoAlpha: 0, scale: 0, y: -14 },
+        {
+          autoAlpha: 1,
+          scale: 1,
+          y: 0,
+          duration: .32,
+          ease: 'steps(4)',
+          stagger: { amount: .85, from: 'random' },
+          scrollTrigger: { trigger: transition, start: 'top 88%', once: true },
+        },
+      )
+
+      gsap.fromTo(
+        inventory.querySelectorAll('.inventory-grid > div'),
+        { autoAlpha: 0, y: 22, scale: .97 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: .48,
+          ease: 'steps(6)',
+          stagger: .09,
+          scrollTrigger: { trigger: inventory, start: 'top 72%', once: true },
+        },
+      )
+    })
+
+    if (!finePointer) return () => animationContext.revert()
+
+    const trailPixels = Array.from(inventory.querySelectorAll<HTMLElement>('.cursor-pixel'))
+    const cursorFrame = cursor.querySelector<HTMLElement>('.cursor-frame')
+    const cursorReadout = cursor.querySelector<HTMLElement>('.cursor-readout')
+    const moveCursorX = gsap.quickTo(cursor, 'x', { duration: .16, ease: 'power3.out' })
+    const moveCursorY = gsap.quickTo(cursor, 'y', { duration: .16, ease: 'power3.out' })
+
+    gsap.set([cursor, ...trailPixels], { xPercent: -50, yPercent: -50 })
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const bounds = inventory.getBoundingClientRect()
+      const x = event.clientX - bounds.left
+      const y = event.clientY - bounds.top
+
+      moveCursorX(x)
+      moveCursorY(y)
+      trailPixels.forEach((pixel, index) => {
+        gsap.to(pixel, {
+          x,
+          y,
+          autoAlpha: Math.max(.12, .58 - index * .08),
+          duration: .18 + index * .045,
+          delay: index * .018,
+          ease: 'steps(4)',
+          overwrite: 'auto',
+        })
+      })
+    }
+
+    const showCursor = (event: PointerEvent) => {
+      handlePointerMove(event)
+      gsap.to([cursor, ...trailPixels], { autoAlpha: 1, duration: .14 })
+    }
+    const hideCursor = () => gsap.to([cursor, ...trailPixels], { autoAlpha: 0, duration: .18 })
+    const inventoryItems = Array.from(inventory.querySelectorAll<HTMLElement>('.inventory-grid > div'))
+
+    const selectItem = () => {
+      if (cursorReadout) cursorReadout.textContent = 'SELECT'
+      gsap.to(cursorFrame, { scale: 1.35, rotate: 45, duration: .18, ease: 'steps(3)' })
+    }
+    const releaseItem = () => {
+      if (cursorReadout) cursorReadout.textContent = 'MOVE'
+      gsap.to(cursorFrame, { scale: 1, rotate: 0, duration: .18, ease: 'steps(3)' })
+    }
+
+    inventory.addEventListener('pointermove', handlePointerMove)
+    inventory.addEventListener('pointerenter', showCursor)
+    inventory.addEventListener('pointerleave', hideCursor)
+    inventoryItems.forEach(item => {
+      item.addEventListener('pointerenter', selectItem)
+      item.addEventListener('pointerleave', releaseItem)
+    })
+
+    return () => {
+      inventory.removeEventListener('pointermove', handlePointerMove)
+      inventory.removeEventListener('pointerenter', showCursor)
+      inventory.removeEventListener('pointerleave', hideCursor)
+      inventoryItems.forEach(item => {
+        item.removeEventListener('pointerenter', selectItem)
+        item.removeEventListener('pointerleave', releaseItem)
+      })
+      gsap.killTweensOf([cursor, cursorFrame, ...trailPixels])
+      animationContext.revert()
+    }
+  }, [])
 
   const closeMenu = () => setMenuOpen(false)
 
@@ -254,7 +367,16 @@ export default function Page() {
         </aside>
       </section>
 
-      <section className="inventory section-shell" aria-labelledby="inventory-title">
+      <div className="pixel-transition" ref={pixelTransitionRef} aria-hidden="true">
+        <div className="pixel-transition-grid">
+          {Array.from({ length: 96 }, (_, index) => <span className={`transition-pixel pixel-tone-${index % 5}`} key={index} />)}
+        </div>
+        <span className="transition-readout">Loading inventory...</span>
+      </div>
+
+      <section className="inventory section-shell" id="ficha" ref={inventoryRef} aria-labelledby="inventory-title">
+        <div className="inventory-cursor" ref={inventoryCursorRef} aria-hidden="true"><span className="cursor-frame" /><span className="cursor-readout">MOVE</span></div>
+        {Array.from({ length: 6 }, (_, index) => <span className={`cursor-pixel cursor-pixel-${index + 1}`} key={index} aria-hidden="true" />)}
         <div className="inventory-card reveal">
           <div className="inventory-heading"><p className="eyebrow">Ariel&apos;s inventory</p><h2 id="inventory-title">Minha ficha,<br /><em>por completo.</em></h2></div>
           <div className="inventory-grid"><div><span>Classe</span><strong>Desenvolvedor backend</strong></div><div><span>Stack principal</span><strong>Node.js + TypeScript</strong></div><div><span>Idiomas</span><strong>Português nativo · Inglês B1</strong></div><div><span>Side quests</span><strong>Japonês, game dev e escrita</strong></div><div className="quest"><BookOpen size={18} /><span>Missão atual</span><strong>Transformar necessidades reais em software claro, útil e possível de evoluir.</strong></div></div>
