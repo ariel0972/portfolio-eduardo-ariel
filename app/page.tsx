@@ -179,46 +179,33 @@ export default function Page() {
     if (!finePointer) return () => animationContext.revert()
 
     const trailPixels = Array.from(inventory.querySelectorAll<HTMLElement>('.cursor-pixel'))
-    const followers = trailPixels.map((pixel, index) => ({
-      x: gsap.quickTo(pixel, 'x', { duration: .18 + index * .07, ease: 'power3.out' }),
-      y: gsap.quickTo(pixel, 'y', { duration: .18 + index * .07, ease: 'power3.out' }),
-    }))
     gsap.set(trailPixels, { xPercent: -50, yPercent: -50 })
-    let active = false
+    let nextPixel = 0
+    let lastEmission = -Infinity
+    let lastPosition: { x: number; y: number } | null = null
 
     const handlePointerMove = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return
       const bounds = inventory.getBoundingClientRect()
       const x = event.clientX - bounds.left
       const y = event.clientY - bounds.top
-      if (!active) {
-        active = true
-        // Start at the pointer on entry, avoiding a sweep from the section corner.
-        gsap.set(trailPixels, { x, y })
-        followers.forEach(follower => {
-          follower.x(x, x)
-          follower.y(y, y)
-        })
-        gsap.to(trailPixels, {
-          autoAlpha: index => .5 - index * .06,
-          duration: .2,
-          overwrite: 'auto',
-        })
-      } else {
-        followers.forEach(follower => {
-          follower.x(x)
-          follower.y(y)
-        })
-      }
+      const now = performance.now()
+      if (now - lastEmission < 35) return
+      if (lastPosition && Math.hypot(x - lastPosition.x, y - lastPosition.y) < 8) return
+
+      const pixel = trailPixels[nextPixel]
+      nextPixel = (nextPixel + 1) % trailPixels.length
+      lastEmission = now
+      lastPosition = { x, y }
+      // Stamp the pixel in place; only opacity changes during its lifetime.
+      gsap.killTweensOf(pixel)
+      gsap.set(pixel, { x, y, autoAlpha: .65 })
+      gsap.to(pixel, { autoAlpha: 0, duration: .8, ease: 'power1.out' })
     }
 
     const hideTrail = () => {
-      active = false
-      followers.forEach(follower => {
-        follower.x.tween.pause()
-        follower.y.tween.pause()
-      })
-      gsap.to(trailPixels, { autoAlpha: 0, duration: .25, overwrite: 'auto' })
+      lastPosition = null
+      lastEmission = -Infinity
     }
 
     inventory.addEventListener('pointermove', handlePointerMove)
@@ -231,10 +218,6 @@ export default function Page() {
       inventory.removeEventListener('pointerleave', hideTrail)
       inventory.removeEventListener('pointercancel', hideTrail)
       window.removeEventListener('blur', hideTrail)
-      followers.forEach(follower => {
-        follower.x.tween.kill()
-        follower.y.tween.kill()
-      })
       gsap.killTweensOf(trailPixels)
       animationContext.revert()
     }
@@ -347,7 +330,7 @@ export default function Page() {
       </section>
 
       <section className="inventory section-shell" id="ficha" ref={inventoryRef} aria-labelledby="inventory-title">
-        {Array.from({ length: 6 }, (_, index) => <span className={`cursor-pixel cursor-pixel-${index + 1}`} key={index} aria-hidden="true" />)}
+        {Array.from({ length: 24 }, (_, index) => <span className={`cursor-pixel cursor-pixel-${index % 6 + 1}`} key={index} aria-hidden="true" />)}
         <div className="inventory-card reveal">
           <div className="inventory-heading"><p className="eyebrow">Ariel&apos;s inventory</p><h2 id="inventory-title">Minha ficha,<br /><em>por completo.</em></h2></div>
           <div className="inventory-grid"><div><span>Classe</span><strong>Desenvolvedor backend</strong></div><div><span>Stack principal</span><strong>Node.js + TypeScript</strong></div><div><span>Idiomas</span><strong>Português nativo · Inglês B1</strong></div><div><span>Side quests</span><strong>Japonês, game dev e escrita</strong></div><div className="quest"><BookOpen size={18} /><span>Missão atual</span><strong>Transformar necessidades reais em software claro, útil e possível de evoluir.</strong></div></div>
